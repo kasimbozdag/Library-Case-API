@@ -8,9 +8,22 @@ dotenv.config();
 const prisma = new PrismaClient();
 
 async function main() {
-  // Example: Fetch all users
+  // Fetch all users
   const users = await prisma.user.findMany();
   console.log(users);
+
+  // Fetch all books
+  const books = await prisma.book.findMany();
+  console.log(books);
+
+  // Fetch all borrow records
+  const borrows = await prisma.borrow.findMany({
+    include: {
+      user: true,
+      book: true,
+    },
+  });
+  console.log(borrows);
   const databaseUrl = process.env.DATABASE_URL;
   console.log(databaseUrl);
 }

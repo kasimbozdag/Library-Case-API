@@ -17,6 +17,8 @@ model User {
   id        Int      @id @default(autoincrement())
   name      String
   borrowedBooks Borrow[]
+
+  @@map("users")
 }
 
 model Book {
@@ -24,6 +26,8 @@ model Book {
   title     String
   averageScore Float?
   Borrow    Borrow[]
+
+  @@map("books")
 }
 
 model Borrow {
@@ -36,4 +40,6 @@ model Borrow {
 
   user User @relation(fields: [userId], references: [id])
   book Book @relation(fields: [bookId], references: [id])
+
+  @@map("borrows")
 }
