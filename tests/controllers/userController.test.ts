@@ -3,122 +3,148 @@ import { getUsers, getUser, createUser } from '../../src/controllers/userControl
 import { PrismaClient } from '@prisma/client';
 import { NotFoundError } from '../../src/utils/ApiError';
 
-// Create a new mock PrismaClient for each test file
 jest.mock('@prisma/client', () => {
-    const mockPrismaClient = {
-        user: {
-            findMany: jest.fn(),
-            findUnique: jest.fn(),
-            create: jest.fn(),
-        },
-    };
-    return { PrismaClient: jest.fn(() => mockPrismaClient) };
+  const mockPrismaClient = {
+    user: {
+      findMany: jest.fn(),
+      findUnique: jest.fn(),
+      create: jest.fn(),
+    },
+  };
+  return { PrismaClient: jest.fn(() => mockPrismaClient) };
 });
 
 const prismaMock = new PrismaClient() as jest.Mocked<PrismaClient>;
 
 describe('User Controller', () => {
-    let req: Partial<Request>;
-    let res: Partial<Response>;
-    let next: NextFunction;
+  let req: Partial<Request>;
+  let res: Partial<Response>;
+  let next: NextFunction;
 
-    beforeEach(() => {
-        req = {};
-        res = {
-            json: jest.fn(),
-            status: jest.fn().mockReturnThis(),
-        };
-        next = jest.fn();
+  beforeEach(() => {
+    req = {};
+    res = {
+      json: jest.fn(),
+      status: jest.fn().mockReturnThis(),
+      send: jest.fn(),
+    };
+    next = jest.fn();
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  describe('getUsers', () => {
+    it('should return a list of users', async () => {
+      const users = [{ id: 1, name: 'John Doe' }, { id: 2, name: 'Jane Doe' }];
+      (prismaMock.user.findMany as jest.Mock).mockResolvedValue(users);
+
+      await getUsers(req as Request, res as Response, next);
+
+      expect(prismaMock.user.findMany).toHaveBeenCalledTimes(1);
+      expect(res.json).toHaveBeenCalledWith(users);
     });
 
-    afterEach(() => {
-        // Clear all mocks after each test to ensure clean slate
-        jest.clearAllMocks();
+    it('should handle errors and pass them to next', async () => {
+      const error = new Error('Database error');
+     (prismaMock.user.findMany as jest.Mock).mockRejectedValue(error);
+
+      await getUsers(req as Request, res as Response, next);
+
+      expect(next).toHaveBeenCalledWith(error);
+    });
+  });
+
+  describe('getUser', () => {
+    it('should return a user with past and present borrowed books', async () => {
+      req = { params: { id: '1' } };
+      const user = {
+        id: 1,
+        name: 'John Doe',
+        borrowedBooks: [
+          {
+            returnedAt: new Date(),
+            userScore: 5,
+            book: { title: 'I, Robot' },
+          },
+          {
+            returnedAt: null,
+            book: { title: 'Brave New World' },
+          },
+        ],
+      };
+      (prismaMock.user.findUnique as jest.Mock).mockResolvedValue(user);
+
+      await getUser(req as Request, res as Response, next);
+
+      expect(prismaMock.user.findUnique).toHaveBeenCalledWith({
+        where: { id: 1 },
+        include: {
+          borrowedBooks: {
+            include: { book: true },
+          },
+        },
+      });
+      expect(res.json).toHaveBeenCalledWith({
+        id: 1,
+        name: 'John Doe',
+        books: {
+          past: [{ name: 'I, Robot', userScore: 5 }],
+          present: [{ name: 'Brave New World' }],
+        },
+      });
     });
 
-    describe('getUsers', () => {
-        it('should return a list of users', async () => {
-            const users = [{ id: 1, name: 'John Doe' }];
-            (prismaMock.user.findMany as jest.Mock).mockResolvedValue(users);
+    it('should throw NotFoundError if user is not found', async () => {
+      req = { params: { id: '999' } };
+      (prismaMock.user.findUnique as jest.Mock).mockResolvedValue(null);
 
-            await getUsers(req as Request, res as Response, next);
+      await getUser(req as Request, res as Response, next);
 
-            expect(prismaMock.user.findMany).toHaveBeenCalledTimes(1);
-            expect(res.json).toHaveBeenCalledWith(users);
-        });
-
-        it('should handle errors', async () => {
-            const error = new Error('Database error');
-            (prismaMock.user.findMany as jest.Mock).mockRejectedValue(error);
-
-            await getUsers(req as Request, res as Response, next);
-
-            expect(next).toHaveBeenCalledWith(error);
-        });
+      expect(prismaMock.user.findUnique).toHaveBeenCalledWith({
+        where: { id: 999 },
+        include: {
+          borrowedBooks: {
+            include: { book: true },
+          },
+        },
+      });
+      expect(next).toHaveBeenCalledWith(new NotFoundError('User not found'));
     });
 
-    describe('getUser', () => {
-        it('should return a user if found', async () => {
-            req = { params: { id: '1' } };
-            const user = { id: 1, name: 'John Doe', borrowedBooks: [] };
-            (prismaMock.user.findUnique as jest.Mock).mockResolvedValue(user);
+    it('should handle errors and pass them to next', async () => {
+      req = { params: { id: '1' } };
+      const error = new Error('Database error');
+      (prismaMock.user.findUnique as jest.Mock).mockRejectedValue(error);
 
-            await getUser(req as Request, res as Response, next);
+      await getUser(req as Request, res as Response, next);
 
-            expect(prismaMock.user.findUnique).toHaveBeenCalledWith({
-                where: { id: 1 },
-                include: { borrowedBooks: true },
-            });
-            expect(res.json).toHaveBeenCalledWith(user);
-        });
+      expect(next).toHaveBeenCalledWith(error);
+    });
+  });
 
-        it('should throw NotFoundError if user is not found', async () => {
-            req = { params: { id: '999' } };
-            (prismaMock.user.findUnique as jest.Mock).mockResolvedValue(null);
+  describe('createUser', () => {
+    it('should create a new user and return 201 status', async () => {
+      req = { body: { name: 'John Doe' } };
 
-            await getUser(req as Request, res as Response, next);
+      await createUser(req as Request, res as Response, next);
 
-            expect(prismaMock.user.findUnique).toHaveBeenCalledWith({
-                where: { id: 999 },
-                include: { borrowedBooks: true },
-            });
-            expect(next).toHaveBeenCalledWith(new NotFoundError('User not found'));
-        });
-
-        it('should handle errors', async () => {
-            req = { params: { id: '1' } };
-            const error = new Error('Database error');
-            (prismaMock.user.findUnique as jest.Mock).mockRejectedValue(error);
-
-            await getUser(req as Request, res as Response, next);
-
-            expect(next).toHaveBeenCalledWith(error);
-        });
+      expect(prismaMock.user.create).toHaveBeenCalledWith({
+        data: { name: 'John Doe' },
+      });
+      expect(res.status).toHaveBeenCalledWith(201);
+      expect(res.send).toHaveBeenCalled();
     });
 
-    describe('createUser', () => {
-        it('should create a new user', async () => {
-            req = { body: { name: 'Jane Doe' } };
-            const newUser = { id: 1, name: 'Jane Doe' };
-            (prismaMock.user.create as jest.Mock).mockResolvedValue(newUser);
+    it('should handle errors and pass them to next', async () => {
+      req = { body: { name: 'John Doe' } };
+      const error = new Error('Database error');
+      (prismaMock.user.create as jest.Mock).mockRejectedValue(error);
 
-            await createUser(req as Request, res as Response, next);
+      await createUser(req as Request, res as Response, next);
 
-            expect(prismaMock.user.create).toHaveBeenCalledWith({
-                data: { name: 'Jane Doe' },
-            });
-            expect(res.status).toHaveBeenCalledWith(201);
-            expect(res.json).toHaveBeenCalledWith(newUser);
-        });
-
-        it('should handle errors', async () => {
-            req = { body: { name: 'Jane Doe' } };
-            const error = new Error('Database error');
-            (prismaMock.user.create as jest.Mock).mockRejectedValue(error);
-
-            await createUser(req as Request, res as Response, next);
-
-            expect(next).toHaveBeenCalledWith(error);
-        });
+      expect(next).toHaveBeenCalledWith(error);
     });
+  });
 });

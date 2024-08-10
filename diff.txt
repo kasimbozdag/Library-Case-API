@@ -1,0 +1,926 @@
+diff --git a/src/app.ts b/src/app.ts
+index 714d523..5e86860 100644
+--- a/src/app.ts
++++ b/src/app.ts
+@@ -30,7 +30,7 @@ app.use(express.json());
+ app.use(express.urlencoded({ extended: true }));
+ 
+ // Define routes
+-app.use('/api', routes);
++app.use('/', routes);
+ 
+ // Handle 404 errors
+ app.use(notFoundHandler);
+diff --git a/src/config/swaggerConfig.ts b/src/config/swaggerConfig.ts
+index 36c9b7b..30bb345 100644
+--- a/src/config/swaggerConfig.ts
++++ b/src/config/swaggerConfig.ts
+@@ -10,7 +10,7 @@ const options: SwaggerOptions = {
+     },
+     servers: [
+       {
+-        url: 'http://localhost:3000/api',
++        url: 'http://localhost:3000/',
+       },
+     ],
+     tags: [
+diff --git a/src/controllers/bookController.ts b/src/controllers/bookController.ts
+index 318bccc..a6dc45b 100644
+--- a/src/controllers/bookController.ts
++++ b/src/controllers/bookController.ts
+@@ -16,17 +16,9 @@ export const getBooks = async (
+       },
+     });
+     const booksWithAverageScore = books.map((book) => {
+-      const averageScore =
+-        book.Borrow.length > 0
+-          ? book.Borrow.reduce(
+-              (acc, borrow) => acc + (borrow.userScore || 0),
+-              0,
+-            ) / book.Borrow.length
+-          : null;
+       return {
+         id: book.id,
+         title: book.title,
+-        averageScore,
+       };
+     });
+     res.json(booksWithAverageScore);
+@@ -48,17 +40,14 @@ export const getBook = async (
+     if (!book) {
+       throw new NotFoundError('Book not found');
+     }
+-    const averageScore =
+-      book.Borrow.length > 0
+-        ? book.Borrow.reduce(
+-            (acc, borrow) => acc + (borrow.userScore || 0),
+-            0,
+-          ) / book.Borrow.length
+-        : null;
++
++    const returnedBorrows = book.Borrow.filter((borrow) => borrow.userScore);
++    const score = returnedBorrows.length > 0 ?
++      returnedBorrows.reduce((acc, borrow) => acc + (borrow.userScore || 0), 0) / returnedBorrows.length : -1;
+     res.json({
+       id: book.id,
+-      title: book.title,
+-      averageScore,
++      name: book.title,
++      score,
+     });
+   } catch (error) {
+     next(error);
+@@ -71,9 +60,9 @@ export const createBook = async (
+   next: NextFunction,
+ ) => {
+   try {
+-    const { title } = req.body;
+-    const newBook = await prisma.book.create({ data: { title } });
+-    res.status(201).json(newBook);
++    const { name } = req.body;
++    await prisma.book.create({ data: { title: name } });
++    res.status(201).send();
+   } catch (error) {
+     next(error);
+   }
+diff --git a/src/controllers/borrowController.ts b/src/controllers/borrowController.ts
+index d32c575..a41c13a 100644
+--- a/src/controllers/borrowController.ts
++++ b/src/controllers/borrowController.ts
+@@ -30,14 +30,14 @@ export const borrowBook = async (
+       throw new ApiError('Book is already borrowed by another user', 400);
+     }
+ 
+-    const borrow = await prisma.borrow.create({
++    await prisma.borrow.create({
+       data: {
+         userId,
+         bookId,
+       },
+     });
+ 
+-    res.status(201).json(borrow);
++    res.status(204).send();
+   } catch (error) {
+     next(error);
+   }
+@@ -63,7 +63,7 @@ export const returnBook = async (
+       );
+     }
+ 
+-    const updatedBorrow = await prisma.borrow.update({
++    await prisma.borrow.update({
+       where: { id: borrow.id },
+       data: {
+         returnedAt: new Date(),
+@@ -71,7 +71,7 @@ export const returnBook = async (
+       },
+     });
+ 
+-    res.status(200).json(updatedBorrow);
++    res.status(204).send();
+   } catch (error) {
+     next(error);
+   }
+diff --git a/src/controllers/userController.ts b/src/controllers/userController.ts
+index b214e7f..e77f446 100644
+--- a/src/controllers/userController.ts
++++ b/src/controllers/userController.ts
+@@ -25,17 +25,49 @@ export const getUser = async (
+   try {
+     const user = await prisma.user.findUnique({
+       where: { id: Number(req.params.id) },
+-      include: { borrowedBooks: true },
++      include: {
++        borrowedBooks: {
++          include: {
++            book: true, // Include book details
++          },
++        },
++      },
+     });
++
+     if (!user) {
+-      throw new NotFoundError('User not found'); // Throws a 404 if the user is not found
++      throw new NotFoundError('User not found');
+     }
+-    res.json(user);
++
++    // Transform the data to the expected response format
++    const pastBooks = user.borrowedBooks
++      .filter(borrow => borrow.returnedAt !== null)
++      .map(borrow => ({
++        name: borrow.book.title,
++        userScore: borrow.userScore,
++      }));
++
++    const presentBooks = user.borrowedBooks
++      .filter(borrow => borrow.returnedAt === null)
++      .map(borrow => ({
++        name: borrow.book.title,
++      }));
++
++    const response = {
++      id: user.id,
++      name: user.name,
++      books: {
++        past: pastBooks,
++        present: presentBooks,
++      },
++    };
++
++    res.json(response);
+   } catch (error) {
+-    next(error); // Passes the error to the custom middleware
++    next(error);
+   }
+ };
+ 
++
+ export const createUser = async (
+   req: Request,
+   res: Response,
+@@ -43,8 +75,8 @@ export const createUser = async (
+ ) => {
+   try {
+     const { name } = req.body; // No need to check !name since validation is handled in middleware
+-    const newUser = await prisma.user.create({ data: { name } });
+-    res.status(201).json(newUser);
++    await prisma.user.create({ data: { name } });
++    res.status(201).send();
+   } catch (error) {
+     next(error); // Passes the error to the custom middleware
+   }
+diff --git a/src/middlewares/validators.ts b/src/middlewares/validators.ts
+index c3a0a52..e88af5a 100644
+--- a/src/middlewares/validators.ts
++++ b/src/middlewares/validators.ts
+@@ -14,7 +14,7 @@ export const validateUser = [
+ ];
+ 
+ export const validateBook = [
+-  body('title').isString().withMessage('Title must be a string'),
++  body('name').isString().withMessage('Name must be a string'),
+   (req: Request, res: Response, next: NextFunction) => {
+     const errors = validationResult(req);
+     if (!errors.isEmpty()) {
+@@ -40,8 +40,8 @@ export const validateReturn = [
+   param('id').isInt().withMessage('User ID must be an integer'),
+   param('bookId').isInt().withMessage('Book ID must be an integer'),
+   body('score')
+-    .isInt({ min: 1, max: 5 })
+-    .withMessage('Score must be an integer between 1 and 5'),
++    .isInt({ min: 1, max: 10 })
++    .withMessage('Score must be an integer between 1 and 10'),
+   (req: Request, res: Response, next: NextFunction) => {
+     const errors = validationResult(req);
+     if (!errors.isEmpty()) {
+diff --git a/src/routes/book.ts b/src/routes/book.ts
+index 9c53450..828ee7b 100644
+--- a/src/routes/book.ts
++++ b/src/routes/book.ts
+@@ -23,10 +23,8 @@ const router = Router();
+  *                 properties:
+  *                   id:
+  *                     type: integer
+- *                   title:
++ *                   name:
+  *                     type: string
+- *                   averageScore:
+- *                     type: number
+  */
+ router.get('/', getBooks);
+ 
+@@ -54,9 +52,9 @@ router.get('/', getBooks);
+  *               properties:
+  *                 id:
+  *                   type: integer
+- *                 title:
++ *                 name:
+  *                   type: string
+- *                 averageScore:
++ *                 score:
+  *                   type: number
+  */
+ router.get('/:id', getBook);
+@@ -76,7 +74,7 @@ router.get('/:id', getBook);
+  *           schema:
+  *             type: object
+  *             properties:
+- *               title:
++ *               name:
+  *                 type: string
+  *     responses:
+  *       201:
+diff --git a/src/routes/borrow.ts b/src/routes/borrow.ts
+index 1360ff0..1353670 100644
+--- a/src/routes/borrow.ts
++++ b/src/routes/borrow.ts
+@@ -8,7 +8,7 @@ const router = Router();
+  * @swagger
+  * tags:
+  *   - Borrowing
+- * /borrows/users/{id}/borrow/{bookId}:
++ * /users/{id}/borrow/{bookId}:
+  *   post:
+  *     summary: Borrow a book for a user
+  *     tags: [Borrowing]
+@@ -26,20 +26,20 @@ const router = Router();
+  *         required: true
+  *         description: Numeric ID of the book to borrow
+  *     responses:
+- *       201:
++ *       204:
+  *         description: Book borrowed successfully
+  *       400:
+  *         description: Invalid input or book already borrowed
+  *       404:
+  *         description: User or book not found
+  */
+-router.post('/users/:id/borrow/:bookId', validateBorrow, borrowBook);
++router.post('/:id/borrow/:bookId', validateBorrow, borrowBook);
+ 
+ /**
+  * @swagger
+  * tags:
+  *   - Borrowing
+- * /borrows/users/{id}/return/{bookId}:
++ * /users/{id}/return/{bookId}:
+  *   post:
+  *     summary: Return a book and provide a rating
+  *     tags: [Borrowing]
+@@ -67,15 +67,15 @@ router.post('/users/:id/borrow/:bookId', validateBorrow, borrowBook);
+  *                 type: integer
+  *                 description: Rating given to the book by the user
+  *                 minimum: 1
+- *                 maximum: 5
++ *                 maximum: 10
+  *     responses:
+- *       200:
++ *       204:
+  *         description: Book returned and rated successfully
+  *       400:
+  *         description: Invalid input or book not currently borrowed
+  *       404:
+  *         description: User or book not found
+  */
+-router.post('/users/:id/return/:bookId', validateReturn, returnBook);
++router.post('/:id/return/:bookId', validateReturn, returnBook);
+ 
+ export default router;
+diff --git a/src/routes/index.ts b/src/routes/index.ts
+index 3e96497..2b4d7ef 100644
+--- a/src/routes/index.ts
++++ b/src/routes/index.ts
+@@ -5,13 +5,14 @@ import borrowRoutes from './borrow';
+ 
+ const router = Router();
+ 
++// Borrow routes
++router.use('/users', borrowRoutes);
++
+ // User routes
+ router.use('/users', userRoutes);
+ 
+ // Book routes
+ router.use('/books', bookRoutes);
+ 
+-// Borrow routes
+-router.use('/borrows', borrowRoutes);
+ 
+ export default router;
+diff --git a/src/routes/user.ts b/src/routes/user.ts
+index 6d5e99e..e69ae06 100644
+--- a/src/routes/user.ts
++++ b/src/routes/user.ts
+@@ -31,22 +31,22 @@ router.get('/', getUsers);
+ 
+ /**
+  * @swagger
+- * tags:
+- *   - Users
+  * /users/{id}:
+  *   get:
+- *     summary: Retrieve a single user by ID
+- *     tags: [Users]
++ *     summary: Get a user by ID
++ *     description: Returns a user along with their past and present borrowed books.
++ *     tags:
++ *       - Users
+  *     parameters:
+  *       - in: path
+  *         name: id
+  *         schema:
+  *           type: integer
+  *         required: true
+- *         description: Numeric ID of the user to retrieve
++ *         description: Numeric ID of the user to get
+  *     responses:
+  *       200:
+- *         description: A single user
++ *         description: A user with their borrowed books
+  *         content:
+  *           application/json:
+  *             schema:
+@@ -54,21 +54,36 @@ router.get('/', getUsers);
+  *               properties:
+  *                 id:
+  *                   type: integer
++ *                   example: 2
+  *                 name:
+  *                   type: string
+- *                 borrowedBooks:
+- *                   type: array
+- *                   items:
+- *                     type: object
+- *                     properties:
+- *                       bookId:
+- *                         type: integer
+- *                       borrowedAt:
+- *                         type: string
+- *                         format: date-time
+- *                       returnedAt:
+- *                         type: string
+- *                         format: date-time
++ *                   example: Enes Faruk Meniz
++ *                 books:
++ *                   type: object
++ *                   properties:
++ *                     past:
++ *                       type: array
++ *                       items:
++ *                         type: object
++ *                         properties:
++ *                           name:
++ *                             type: string
++ *                             example: "I, Robot"
++ *                           userScore:
++ *                             type: integer
++ *                             example: 5
++ *                     present:
++ *                       type: array
++ *                       items:
++ *                         type: object
++ *                         properties:
++ *                           name:
++ *                             type: string
++ *                             example: "Brave New World"
++ *       404:
++ *         description: User not found
++ *       500:
++ *         description: Internal server error
+  */
+ router.get('/:id', getUser);
+ 
+diff --git a/tests/controllers/bookController.test.ts b/tests/controllers/bookController.test.ts
+index 30af743..857fab7 100644
+--- a/tests/controllers/bookController.test.ts
++++ b/tests/controllers/bookController.test.ts
+@@ -3,7 +3,6 @@ import { getBooks, getBook, createBook } from '../../src/controllers/bookControl
+ import { PrismaClient } from '@prisma/client';
+ import { NotFoundError } from '../../src/utils/ApiError';
+ 
+-// Mock the PrismaClient module
+ jest.mock('@prisma/client', () => {
+   const mockPrismaClient = {
+     book: {
+@@ -27,40 +26,33 @@ describe('Book Controller', () => {
+     res = {
+       json: jest.fn(),
+       status: jest.fn().mockReturnThis(),
++      send: jest.fn(),
+     };
+     next = jest.fn();
+   });
+ 
+   afterEach(() => {
+-    jest.clearAllMocks(); // Clear all mocks after each test to ensure clean slate
++    jest.clearAllMocks();
+   });
+ 
+   describe('getBooks', () => {
+-    it('should return a list of books with average scores', async () => {
++    it('should return a list of books with their titles', async () => {
+       const books = [
+-        {
+-          id: 1,
+-          title: 'Book 1',
+-          Borrow: [{ userScore: 4 }, { userScore: 5 }],
+-        },
+-        {
+-          id: 2,
+-          title: 'Book 2',
+-          Borrow: [],
+-        },
++        { id: 1, title: 'Book 1', Borrow: [] },
++        { id: 2, title: 'Book 2', Borrow: [] },
+       ];
+-      (prismaMock.book.findMany as jest.Mock).mockResolvedValue(books);
++        (prismaMock.book.findMany as jest.Mock).mockResolvedValue(books);
+ 
+       await getBooks(req as Request, res as Response, next);
+ 
+       expect(prismaMock.book.findMany).toHaveBeenCalledTimes(1);
+       expect(res.json).toHaveBeenCalledWith([
+-        { id: 1, title: 'Book 1', averageScore: 4.5 },
+-        { id: 2, title: 'Book 2', averageScore: null },
++        { id: 1, title: 'Book 1' },
++        { id: 2, title: 'Book 2' },
+       ]);
+     });
+ 
+-    it('should handle errors', async () => {
++    it('should handle errors and pass them to next', async () => {
+       const error = new Error('Database error');
+       (prismaMock.book.findMany as jest.Mock).mockRejectedValue(error);
+ 
+@@ -68,49 +60,15 @@ describe('Book Controller', () => {
+ 
+       expect(next).toHaveBeenCalledWith(error);
+     });
+-    it('should return a list of books with null averageScore if no borrow records exist', async () => {
+-      const books = [
+-        {
+-          id: 1,
+-          title: 'Book 1',
+-          Borrow: [], // No borrow records
+-        },
+-      ];
+-      (prismaMock.book.findMany as jest.Mock).mockResolvedValue(books);
+-
+-      await getBooks(req as Request, res as Response, next);
+-
+-      expect(prismaMock.book.findMany).toHaveBeenCalledTimes(1);
+-      expect(res.json).toHaveBeenCalledWith([
+-        { id: 1, title: 'Book 1', averageScore: null },
+-      ]);
+-    });
+-    it('should handle borrow records with null or 0 scores correctly', async () => {
+-      const books = [
+-        {
+-          id: 1,
+-          title: 'Book 1',
+-          Borrow: [{ userScore: null }, { userScore: 0 }],
+-        },
+-      ];
+-      (prismaMock.book.findMany as jest.Mock).mockResolvedValue(books);
+-  
+-      await getBooks(req as Request, res as Response, next);
+-  
+-      expect(prismaMock.book.findMany).toHaveBeenCalledTimes(1);
+-      expect(res.json).toHaveBeenCalledWith([
+-        { id: 1, title: 'Book 1', averageScore: 0 }, // averageScore should be 0
+-      ]);
+-    });
+   });
+ 
+   describe('getBook', () => {
+-    it('should return a book with its average score if found', async () => {
++    it('should return a book with its score if found', async () => {
+       req = { params: { id: '1' } };
+       const book = {
+         id: 1,
+         title: 'Book 1',
+-        Borrow: [{ userScore: 3 }, { userScore: 4 }],
++        Borrow: [{ userScore: 5 }, { userScore: 3 }],
+       };
+       (prismaMock.book.findUnique as jest.Mock).mockResolvedValue(book);
+ 
+@@ -121,9 +79,31 @@ describe('Book Controller', () => {
+         include: { Borrow: true },
+       });
+       expect(res.json).toHaveBeenCalledWith({
++        id: 1,
++        name: 'Book 1',
++        score: 4, // Average score (5 + 3) / 2
++      });
++    });
++
++    it('should return a book with score -1 if no Borrow records are found', async () => {
++      req = { params: { id: '1' } };
++      const book = {
+         id: 1,
+         title: 'Book 1',
+-        averageScore: 3.5,
++        Borrow: [],
++      };
++      (prismaMock.book.findUnique as jest.Mock).mockResolvedValue(book);
++
++      await getBook(req as Request, res as Response, next);
++
++      expect(prismaMock.book.findUnique).toHaveBeenCalledWith({
++        where: { id: 1 },
++        include: { Borrow: true },
++      });
++      expect(res.json).toHaveBeenCalledWith({
++        id: 1,
++        name: 'Book 1',
++        score: -1,
+       });
+     });
+ 
+@@ -140,7 +120,7 @@ describe('Book Controller', () => {
+       expect(next).toHaveBeenCalledWith(new NotFoundError('Book not found'));
+     });
+ 
+-    it('should handle errors', async () => {
++    it('should handle errors and pass them to next', async () => {
+       req = { params: { id: '1' } };
+       const error = new Error('Database error');
+       (prismaMock.book.findUnique as jest.Mock).mockRejectedValue(error);
+@@ -149,12 +129,13 @@ describe('Book Controller', () => {
+ 
+       expect(next).toHaveBeenCalledWith(error);
+     });
+-    it('should return a book with null averageScore if no borrow records exist', async () => {
++
++    it('should return a book with its score if both barrowed and returned', async () => {
+       req = { params: { id: '1' } };
+       const book = {
+         id: 1,
+         title: 'Book 1',
+-        Borrow: [], // No borrow records
++        Borrow: [{ userScore: 5, returnedAt: new Date() }, { userScore: null, returnedAt: null }],
+       };
+       (prismaMock.book.findUnique as jest.Mock).mockResolvedValue(book);
+ 
+@@ -166,53 +147,15 @@ describe('Book Controller', () => {
+       });
+       expect(res.json).toHaveBeenCalledWith({
+         id: 1,
+-        title: 'Book 1',
+-        averageScore: null,
+-      });
+-    });
+-    it('should handle errors correctly and pass them to next', async () => {
+-      req = { params: { id: '1' } };
+-      const error = new Error('Database error');
+-  
+-      (prismaMock.book.findUnique as jest.Mock).mockRejectedValue(error);
+-  
+-      await getBook(req as Request, res as Response, next);
+-  
+-      expect(prismaMock.book.findUnique).toHaveBeenCalledWith({
+-        where: { id: 1 },
+-        include: { Borrow: true },
++        name: 'Book 1',
++        score: 5,
+       });
+-      expect(next).toHaveBeenCalledWith(error);
+     });
+-    it('should return a book with null averageScore if borrow records have null or 0 scores', async () => {
+-      req = { params: { id: '1' } };
+-      const book = {
+-        id: 1,
+-        title: 'Book 1',
+-        Borrow: [{ userScore: null }, { userScore: 0 }],
+-      };
+-      (prismaMock.book.findUnique as jest.Mock).mockResolvedValue(book);
+-  
+-      await getBook(req as Request, res as Response, next);
+-  
+-      expect(prismaMock.book.findUnique).toHaveBeenCalledWith({
+-        where: { id: 1 },
+-        include: { Borrow: true },
+-      });
+-      expect(res.json).toHaveBeenCalledWith({
+-        id: 1,
+-        title: 'Book 1',
+-        averageScore: 0, // averageScore should be 0
+-      });
+-    });
+-
+   });
+ 
+   describe('createBook', () => {
+-    it('should create a new book', async () => {
+-      req = { body: { title: 'New Book' } };
+-      const newBook = { id: 1, title: 'New Book' };
+-      (prismaMock.book.create as jest.Mock).mockResolvedValue(newBook);
++    it('should create a new book and return 201 status', async () => {
++      req = { body: { name: 'New Book' } };
+ 
+       await createBook(req as Request, res as Response, next);
+ 
+@@ -220,11 +163,11 @@ describe('Book Controller', () => {
+         data: { title: 'New Book' },
+       });
+       expect(res.status).toHaveBeenCalledWith(201);
+-      expect(res.json).toHaveBeenCalledWith(newBook);
++      expect(res.send).toHaveBeenCalled();
+     });
+ 
+-    it('should handle errors', async () => {
+-      req = { body: { title: 'New Book' } };
++    it('should handle errors and pass them to next', async () => {
++      req = { body: { name: 'New Book' } };
+       const error = new Error('Database error');
+       (prismaMock.book.create as jest.Mock).mockRejectedValue(error);
+ 
+diff --git a/tests/controllers/borrowController.test.ts b/tests/controllers/borrowController.test.ts
+index 3b11df3..09af27c 100644
+--- a/tests/controllers/borrowController.test.ts
++++ b/tests/controllers/borrowController.test.ts
+@@ -63,8 +63,7 @@ describe('Borrow Controller', () => {
+       expect(prismaMock.borrow.create).toHaveBeenCalledWith({
+         data: { userId: 1, bookId: 1 },
+       });
+-      expect(res.status).toHaveBeenCalledWith(201);
+-      expect(res.json).toHaveBeenCalledWith(borrow);
++      expect(res.status).toHaveBeenCalledWith(204);
+     });
+ 
+     it('should throw NotFoundError if user does not exist', async () => {
+@@ -145,8 +144,7 @@ describe('Borrow Controller', () => {
+           userScore: 5,
+         },
+       });
+-      expect(res.status).toHaveBeenCalledWith(200);
+-      expect(res.json).toHaveBeenCalledWith(updatedBorrow);
++      expect(res.status).toHaveBeenCalledWith(204);
+     });
+ 
+     it('should throw ApiError if no borrow record exists', async () => {
+diff --git a/tests/controllers/userController.test.ts b/tests/controllers/userController.test.ts
+index a934df8..67160d3 100644
+--- a/tests/controllers/userController.test.ts
++++ b/tests/controllers/userController.test.ts
+@@ -3,122 +3,148 @@ import { getUsers, getUser, createUser } from '../../src/controllers/userControl
+ import { PrismaClient } from '@prisma/client';
+ import { NotFoundError } from '../../src/utils/ApiError';
+ 
+-// Create a new mock PrismaClient for each test file
+ jest.mock('@prisma/client', () => {
+-    const mockPrismaClient = {
+-        user: {
+-            findMany: jest.fn(),
+-            findUnique: jest.fn(),
+-            create: jest.fn(),
+-        },
+-    };
+-    return { PrismaClient: jest.fn(() => mockPrismaClient) };
++  const mockPrismaClient = {
++    user: {
++      findMany: jest.fn(),
++      findUnique: jest.fn(),
++      create: jest.fn(),
++    },
++  };
++  return { PrismaClient: jest.fn(() => mockPrismaClient) };
+ });
+ 
+ const prismaMock = new PrismaClient() as jest.Mocked<PrismaClient>;
+ 
+ describe('User Controller', () => {
+-    let req: Partial<Request>;
+-    let res: Partial<Response>;
+-    let next: NextFunction;
+-
+-    beforeEach(() => {
+-        req = {};
+-        res = {
+-            json: jest.fn(),
+-            status: jest.fn().mockReturnThis(),
+-        };
+-        next = jest.fn();
+-    });
+-
+-    afterEach(() => {
+-        // Clear all mocks after each test to ensure clean slate
+-        jest.clearAllMocks();
+-    });
+-
+-    describe('getUsers', () => {
+-        it('should return a list of users', async () => {
+-            const users = [{ id: 1, name: 'John Doe' }];
+-            (prismaMock.user.findMany as jest.Mock).mockResolvedValue(users);
+-
+-            await getUsers(req as Request, res as Response, next);
++  let req: Partial<Request>;
++  let res: Partial<Response>;
++  let next: NextFunction;
++
++  beforeEach(() => {
++    req = {};
++    res = {
++      json: jest.fn(),
++      status: jest.fn().mockReturnThis(),
++      send: jest.fn(),
++    };
++    next = jest.fn();
++  });
+ 
+-            expect(prismaMock.user.findMany).toHaveBeenCalledTimes(1);
+-            expect(res.json).toHaveBeenCalledWith(users);
+-        });
++  afterEach(() => {
++    jest.clearAllMocks();
++  });
+ 
+-        it('should handle errors', async () => {
+-            const error = new Error('Database error');
+-            (prismaMock.user.findMany as jest.Mock).mockRejectedValue(error);
++  describe('getUsers', () => {
++    it('should return a list of users', async () => {
++      const users = [{ id: 1, name: 'John Doe' }, { id: 2, name: 'Jane Doe' }];
++      (prismaMock.user.findMany as jest.Mock).mockResolvedValue(users);
+ 
+-            await getUsers(req as Request, res as Response, next);
++      await getUsers(req as Request, res as Response, next);
+ 
+-            expect(next).toHaveBeenCalledWith(error);
+-        });
++      expect(prismaMock.user.findMany).toHaveBeenCalledTimes(1);
++      expect(res.json).toHaveBeenCalledWith(users);
+     });
+ 
+-    describe('getUser', () => {
+-        it('should return a user if found', async () => {
+-            req = { params: { id: '1' } };
+-            const user = { id: 1, name: 'John Doe', borrowedBooks: [] };
+-            (prismaMock.user.findUnique as jest.Mock).mockResolvedValue(user);
++    it('should handle errors and pass them to next', async () => {
++      const error = new Error('Database error');
++     (prismaMock.user.findMany as jest.Mock).mockRejectedValue(error);
+ 
+-            await getUser(req as Request, res as Response, next);
++      await getUsers(req as Request, res as Response, next);
+ 
+-            expect(prismaMock.user.findUnique).toHaveBeenCalledWith({
+-                where: { id: 1 },
+-                include: { borrowedBooks: true },
+-            });
+-            expect(res.json).toHaveBeenCalledWith(user);
+-        });
++      expect(next).toHaveBeenCalledWith(error);
++    });
++  });
++
++  describe('getUser', () => {
++    it('should return a user with past and present borrowed books', async () => {
++      req = { params: { id: '1' } };
++      const user = {
++        id: 1,
++        name: 'John Doe',
++        borrowedBooks: [
++          {
++            returnedAt: new Date(),
++            userScore: 5,
++            book: { title: 'I, Robot' },
++          },
++          {
++            returnedAt: null,
++            book: { title: 'Brave New World' },
++          },
++        ],
++      };
++      (prismaMock.user.findUnique as jest.Mock).mockResolvedValue(user);
++
++      await getUser(req as Request, res as Response, next);
++
++      expect(prismaMock.user.findUnique).toHaveBeenCalledWith({
++        where: { id: 1 },
++        include: {
++          borrowedBooks: {
++            include: { book: true },
++          },
++        },
++      });
++      expect(res.json).toHaveBeenCalledWith({
++        id: 1,
++        name: 'John Doe',
++        books: {
++          past: [{ name: 'I, Robot', userScore: 5 }],
++          present: [{ name: 'Brave New World' }],
++        },
++      });
++    });
+ 
+-        it('should throw NotFoundError if user is not found', async () => {
+-            req = { params: { id: '999' } };
+-            (prismaMock.user.findUnique as jest.Mock).mockResolvedValue(null);
++    it('should throw NotFoundError if user is not found', async () => {
++      req = { params: { id: '999' } };
++      (prismaMock.user.findUnique as jest.Mock).mockResolvedValue(null);
+ 
+-            await getUser(req as Request, res as Response, next);
++      await getUser(req as Request, res as Response, next);
+ 
+-            expect(prismaMock.user.findUnique).toHaveBeenCalledWith({
+-                where: { id: 999 },
+-                include: { borrowedBooks: true },
+-            });
+-            expect(next).toHaveBeenCalledWith(new NotFoundError('User not found'));
+-        });
++      expect(prismaMock.user.findUnique).toHaveBeenCalledWith({
++        where: { id: 999 },
++        include: {
++          borrowedBooks: {
++            include: { book: true },
++          },
++        },
++      });
++      expect(next).toHaveBeenCalledWith(new NotFoundError('User not found'));
++    });
+ 
+-        it('should handle errors', async () => {
+-            req = { params: { id: '1' } };
+-            const error = new Error('Database error');
+-            (prismaMock.user.findUnique as jest.Mock).mockRejectedValue(error);
++    it('should handle errors and pass them to next', async () => {
++      req = { params: { id: '1' } };
++      const error = new Error('Database error');
++      (prismaMock.user.findUnique as jest.Mock).mockRejectedValue(error);
+ 
+-            await getUser(req as Request, res as Response, next);
++      await getUser(req as Request, res as Response, next);
+ 
+-            expect(next).toHaveBeenCalledWith(error);
+-        });
++      expect(next).toHaveBeenCalledWith(error);
+     });
++  });
+ 
+-    describe('createUser', () => {
+-        it('should create a new user', async () => {
+-            req = { body: { name: 'Jane Doe' } };
+-            const newUser = { id: 1, name: 'Jane Doe' };
+-            (prismaMock.user.create as jest.Mock).mockResolvedValue(newUser);
++  describe('createUser', () => {
++    it('should create a new user and return 201 status', async () => {
++      req = { body: { name: 'John Doe' } };
+ 
+-            await createUser(req as Request, res as Response, next);
++      await createUser(req as Request, res as Response, next);
+ 
+-            expect(prismaMock.user.create).toHaveBeenCalledWith({
+-                data: { name: 'Jane Doe' },
+-            });
+-            expect(res.status).toHaveBeenCalledWith(201);
+-            expect(res.json).toHaveBeenCalledWith(newUser);
+-        });
++      expect(prismaMock.user.create).toHaveBeenCalledWith({
++        data: { name: 'John Doe' },
++      });
++      expect(res.status).toHaveBeenCalledWith(201);
++      expect(res.send).toHaveBeenCalled();
++    });
+ 
+-        it('should handle errors', async () => {
+-            req = { body: { name: 'Jane Doe' } };
+-            const error = new Error('Database error');
+-            (prismaMock.user.create as jest.Mock).mockRejectedValue(error);
++    it('should handle errors and pass them to next', async () => {
++      req = { body: { name: 'John Doe' } };
++      const error = new Error('Database error');
++      (prismaMock.user.create as jest.Mock).mockRejectedValue(error);
+ 
+-            await createUser(req as Request, res as Response, next);
++      await createUser(req as Request, res as Response, next);
+ 
+-            expect(next).toHaveBeenCalledWith(error);
+-        });
++      expect(next).toHaveBeenCalledWith(error);
+     });
++  });
+ });

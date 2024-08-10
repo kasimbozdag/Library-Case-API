@@ -23,10 +23,8 @@ const router = Router();
  *                 properties:
  *                   id:
  *                     type: integer
- *                   title:
+ *                   name:
  *                     type: string
- *                   averageScore:
- *                     type: number
  */
 router.get('/', getBooks);
 
@@ -54,9 +52,9 @@ router.get('/', getBooks);
  *               properties:
  *                 id:
  *                   type: integer
- *                 title:
+ *                 name:
  *                   type: string
- *                 averageScore:
+ *                 score:
  *                   type: number
  */
 router.get('/:id', getBook);
@@ -76,7 +74,7 @@ router.get('/:id', getBook);
  *           schema:
  *             type: object
  *             properties:
- *               title:
+ *               name:
  *                 type: string
  *     responses:
  *       201:

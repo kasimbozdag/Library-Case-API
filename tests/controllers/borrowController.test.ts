@@ -63,8 +63,7 @@ describe('Borrow Controller', () => {
       expect(prismaMock.borrow.create).toHaveBeenCalledWith({
         data: { userId: 1, bookId: 1 },
       });
-      expect(res.status).toHaveBeenCalledWith(201);
-      expect(res.json).toHaveBeenCalledWith(borrow);
+      expect(res.status).toHaveBeenCalledWith(204);
     });
 
     it('should throw NotFoundError if user does not exist', async () => {
@@ -145,8 +144,7 @@ describe('Borrow Controller', () => {
           userScore: 5,
         },
       });
-      expect(res.status).toHaveBeenCalledWith(200);
-      expect(res.json).toHaveBeenCalledWith(updatedBorrow);
+      expect(res.status).toHaveBeenCalledWith(204);
     });
 
     it('should throw ApiError if no borrow record exists', async () => {

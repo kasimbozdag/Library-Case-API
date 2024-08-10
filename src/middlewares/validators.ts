@@ -14,7 +14,7 @@ export const validateUser = [
 ];
 
 export const validateBook = [
-  body('title').isString().withMessage('Title must be a string'),
+  body('name').isString().withMessage('Name must be a string'),
   (req: Request, res: Response, next: NextFunction) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -40,8 +40,8 @@ export const validateReturn = [
   param('id').isInt().withMessage('User ID must be an integer'),
   param('bookId').isInt().withMessage('Book ID must be an integer'),
   body('score')
-    .isInt({ min: 1, max: 5 })
-    .withMessage('Score must be an integer between 1 and 5'),
+    .isInt({ min: 1, max: 10 })
+    .withMessage('Score must be an integer between 1 and 10'),
   (req: Request, res: Response, next: NextFunction) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {

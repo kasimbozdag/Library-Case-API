@@ -8,7 +8,7 @@ const router = Router();
  * @swagger
  * tags:
  *   - Borrowing
- * /borrows/users/{id}/borrow/{bookId}:
+ * /users/{id}/borrow/{bookId}:
  *   post:
  *     summary: Borrow a book for a user
  *     tags: [Borrowing]
@@ -26,20 +26,20 @@ const router = Router();
  *         required: true
  *         description: Numeric ID of the book to borrow
  *     responses:
- *       201:
+ *       204:
  *         description: Book borrowed successfully
  *       400:
  *         description: Invalid input or book already borrowed
  *       404:
  *         description: User or book not found
  */
-router.post('/users/:id/borrow/:bookId', validateBorrow, borrowBook);
+router.post('/:id/borrow/:bookId', validateBorrow, borrowBook);
 
 /**
  * @swagger
  * tags:
  *   - Borrowing
- * /borrows/users/{id}/return/{bookId}:
+ * /users/{id}/return/{bookId}:
  *   post:
  *     summary: Return a book and provide a rating
  *     tags: [Borrowing]
@@ -67,15 +67,15 @@ router.post('/users/:id/borrow/:bookId', validateBorrow, borrowBook);
  *                 type: integer
  *                 description: Rating given to the book by the user
  *                 minimum: 1
- *                 maximum: 5
+ *                 maximum: 10
  *     responses:
- *       200:
+ *       204:
  *         description: Book returned and rated successfully
  *       400:
  *         description: Invalid input or book not currently borrowed
  *       404:
  *         description: User or book not found
  */
-router.post('/users/:id/return/:bookId', validateReturn, returnBook);
+router.post('/:id/return/:bookId', validateReturn, returnBook);
 
 export default router;

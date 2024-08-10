@@ -30,7 +30,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Define routes
-app.use('/api', routes);
+app.use('/', routes);
 
 // Handle 404 errors
 app.use(notFoundHandler);

@@ -31,22 +31,22 @@ router.get('/', getUsers);
 
 /**
  * @swagger
- * tags:
- *   - Users
  * /users/{id}:
  *   get:
- *     summary: Retrieve a single user by ID
- *     tags: [Users]
+ *     summary: Get a user by ID
+ *     description: Returns a user along with their past and present borrowed books.
+ *     tags:
+ *       - Users
  *     parameters:
  *       - in: path
  *         name: id
  *         schema:
  *           type: integer
  *         required: true
- *         description: Numeric ID of the user to retrieve
+ *         description: Numeric ID of the user to get
  *     responses:
  *       200:
- *         description: A single user
+ *         description: A user with their borrowed books
  *         content:
  *           application/json:
  *             schema:
@@ -54,21 +54,36 @@ router.get('/', getUsers);
  *               properties:
  *                 id:
  *                   type: integer
+ *                   example: 2
  *                 name:
  *                   type: string
- *                 borrowedBooks:
- *                   type: array
- *                   items:
- *                     type: object
- *                     properties:
- *                       bookId:
- *                         type: integer
- *                       borrowedAt:
- *                         type: string
- *                         format: date-time
- *                       returnedAt:
- *                         type: string
- *                         format: date-time
+ *                   example: Enes Faruk Meniz
+ *                 books:
+ *                   type: object
+ *                   properties:
+ *                     past:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           name:
+ *                             type: string
+ *                             example: "I, Robot"
+ *                           userScore:
+ *                             type: integer
+ *                             example: 5
+ *                     present:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           name:
+ *                             type: string
+ *                             example: "Brave New World"
+ *       404:
+ *         description: User not found
+ *       500:
+ *         description: Internal server error
  */
 router.get('/:id', getUser);
 

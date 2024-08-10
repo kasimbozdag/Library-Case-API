@@ -30,14 +30,14 @@ export const borrowBook = async (
       throw new ApiError('Book is already borrowed by another user', 400);
     }
 
-    const borrow = await prisma.borrow.create({
+    await prisma.borrow.create({
       data: {
         userId,
         bookId,
       },
     });
 
-    res.status(201).json(borrow);
+    res.status(204).send();
   } catch (error) {
     next(error);
   }
@@ -63,7 +63,7 @@ export const returnBook = async (
       );
     }
 
-    const updatedBorrow = await prisma.borrow.update({
+    await prisma.borrow.update({
       where: { id: borrow.id },
       data: {
         returnedAt: new Date(),
@@ -71,7 +71,7 @@ export const returnBook = async (
       },
     });
 
-    res.status(200).json(updatedBorrow);
+    res.status(204).send();
   } catch (error) {
     next(error);
   }

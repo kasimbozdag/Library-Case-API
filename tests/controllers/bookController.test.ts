@@ -3,7 +3,6 @@ import { getBooks, getBook, createBook } from '../../src/controllers/bookControl
 import { PrismaClient } from '@prisma/client';
 import { NotFoundError } from '../../src/utils/ApiError';
 
-// Mock the PrismaClient module
 jest.mock('@prisma/client', () => {
   const mockPrismaClient = {
     book: {
@@ -27,40 +26,33 @@ describe('Book Controller', () => {
     res = {
       json: jest.fn(),
       status: jest.fn().mockReturnThis(),
+      send: jest.fn(),
     };
     next = jest.fn();
   });
 
   afterEach(() => {
-    jest.clearAllMocks(); // Clear all mocks after each test to ensure clean slate
+    jest.clearAllMocks();
   });
 
   describe('getBooks', () => {
-    it('should return a list of books with average scores', async () => {
+    it('should return a list of books with their titles', async () => {
       const books = [
-        {
-          id: 1,
-          title: 'Book 1',
-          Borrow: [{ userScore: 4 }, { userScore: 5 }],
-        },
-        {
-          id: 2,
-          title: 'Book 2',
-          Borrow: [],
-        },
+        { id: 1, title: 'Book 1', Borrow: [] },
+        { id: 2, title: 'Book 2', Borrow: [] },
       ];
-      (prismaMock.book.findMany as jest.Mock).mockResolvedValue(books);
+        (prismaMock.book.findMany as jest.Mock).mockResolvedValue(books);
 
       await getBooks(req as Request, res as Response, next);
 
       expect(prismaMock.book.findMany).toHaveBeenCalledTimes(1);
       expect(res.json).toHaveBeenCalledWith([
-        { id: 1, title: 'Book 1', averageScore: 4.5 },
-        { id: 2, title: 'Book 2', averageScore: null },
+        { id: 1, title: 'Book 1' },
+        { id: 2, title: 'Book 2' },
       ]);
     });
 
-    it('should handle errors', async () => {
+    it('should handle errors and pass them to next', async () => {
       const error = new Error('Database error');
       (prismaMock.book.findMany as jest.Mock).mockRejectedValue(error);
 
@@ -68,49 +60,15 @@ describe('Book Controller', () => {
 
       expect(next).toHaveBeenCalledWith(error);
     });
-    it('should return a list of books with null averageScore if no borrow records exist', async () => {
-      const books = [
-        {
-          id: 1,
-          title: 'Book 1',
-          Borrow: [], // No borrow records
-        },
-      ];
-      (prismaMock.book.findMany as jest.Mock).mockResolvedValue(books);
-
-      await getBooks(req as Request, res as Response, next);
-
-      expect(prismaMock.book.findMany).toHaveBeenCalledTimes(1);
-      expect(res.json).toHaveBeenCalledWith([
-        { id: 1, title: 'Book 1', averageScore: null },
-      ]);
-    });
-    it('should handle borrow records with null or 0 scores correctly', async () => {
-      const books = [
-        {
-          id: 1,
-          title: 'Book 1',
-          Borrow: [{ userScore: null }, { userScore: 0 }],
-        },
-      ];
-      (prismaMock.book.findMany as jest.Mock).mockResolvedValue(books);
-  
-      await getBooks(req as Request, res as Response, next);
-  
-      expect(prismaMock.book.findMany).toHaveBeenCalledTimes(1);
-      expect(res.json).toHaveBeenCalledWith([
-        { id: 1, title: 'Book 1', averageScore: 0 }, // averageScore should be 0
-      ]);
-    });
   });
 
   describe('getBook', () => {
-    it('should return a book with its average score if found', async () => {
+    it('should return a book with its score if found', async () => {
       req = { params: { id: '1' } };
       const book = {
         id: 1,
         title: 'Book 1',
-        Borrow: [{ userScore: 3 }, { userScore: 4 }],
+        Borrow: [{ userScore: 5 }, { userScore: 3 }],
       };
       (prismaMock.book.findUnique as jest.Mock).mockResolvedValue(book);
 
@@ -122,8 +80,30 @@ describe('Book Controller', () => {
       });
       expect(res.json).toHaveBeenCalledWith({
         id: 1,
+        name: 'Book 1',
+        score: 4, // Average score (5 + 3) / 2
+      });
+    });
+
+    it('should return a book with score -1 if no Borrow records are found', async () => {
+      req = { params: { id: '1' } };
+      const book = {
+        id: 1,
         title: 'Book 1',
-        averageScore: 3.5,
+        Borrow: [],
+      };
+      (prismaMock.book.findUnique as jest.Mock).mockResolvedValue(book);
+
+      await getBook(req as Request, res as Response, next);
+
+      expect(prismaMock.book.findUnique).toHaveBeenCalledWith({
+        where: { id: 1 },
+        include: { Borrow: true },
+      });
+      expect(res.json).toHaveBeenCalledWith({
+        id: 1,
+        name: 'Book 1',
+        score: -1,
       });
     });
 
@@ -140,7 +120,7 @@ describe('Book Controller', () => {
       expect(next).toHaveBeenCalledWith(new NotFoundError('Book not found'));
     });
 
-    it('should handle errors', async () => {
+    it('should handle errors and pass them to next', async () => {
       req = { params: { id: '1' } };
       const error = new Error('Database error');
       (prismaMock.book.findUnique as jest.Mock).mockRejectedValue(error);
@@ -149,12 +129,13 @@ describe('Book Controller', () => {
 
       expect(next).toHaveBeenCalledWith(error);
     });
-    it('should return a book with null averageScore if no borrow records exist', async () => {
+
+    it('should return a book with its score if both barrowed and returned', async () => {
       req = { params: { id: '1' } };
       const book = {
         id: 1,
         title: 'Book 1',
-        Borrow: [], // No borrow records
+        Borrow: [{ userScore: 5, returnedAt: new Date() }, { userScore: null, returnedAt: null }],
       };
       (prismaMock.book.findUnique as jest.Mock).mockResolvedValue(book);
 
@@ -166,53 +147,15 @@ describe('Book Controller', () => {
       });
       expect(res.json).toHaveBeenCalledWith({
         id: 1,
-        title: 'Book 1',
-        averageScore: null,
+        name: 'Book 1',
+        score: 5,
       });
     });
-    it('should handle errors correctly and pass them to next', async () => {
-      req = { params: { id: '1' } };
-      const error = new Error('Database error');
-  
-      (prismaMock.book.findUnique as jest.Mock).mockRejectedValue(error);
-  
-      await getBook(req as Request, res as Response, next);
-  
-      expect(prismaMock.book.findUnique).toHaveBeenCalledWith({
-        where: { id: 1 },
-        include: { Borrow: true },
-      });
-      expect(next).toHaveBeenCalledWith(error);
-    });
-    it('should return a book with null averageScore if borrow records have null or 0 scores', async () => {
-      req = { params: { id: '1' } };
-      const book = {
-        id: 1,
-        title: 'Book 1',
-        Borrow: [{ userScore: null }, { userScore: 0 }],
-      };
-      (prismaMock.book.findUnique as jest.Mock).mockResolvedValue(book);
-  
-      await getBook(req as Request, res as Response, next);
-  
-      expect(prismaMock.book.findUnique).toHaveBeenCalledWith({
-        where: { id: 1 },
-        include: { Borrow: true },
-      });
-      expect(res.json).toHaveBeenCalledWith({
-        id: 1,
-        title: 'Book 1',
-        averageScore: 0, // averageScore should be 0
-      });
-    });
-
   });
 
   describe('createBook', () => {
-    it('should create a new book', async () => {
-      req = { body: { title: 'New Book' } };
-      const newBook = { id: 1, title: 'New Book' };
-      (prismaMock.book.create as jest.Mock).mockResolvedValue(newBook);
+    it('should create a new book and return 201 status', async () => {
+      req = { body: { name: 'New Book' } };
 
       await createBook(req as Request, res as Response, next);
 
@@ -220,11 +163,11 @@ describe('Book Controller', () => {
         data: { title: 'New Book' },
       });
       expect(res.status).toHaveBeenCalledWith(201);
-      expect(res.json).toHaveBeenCalledWith(newBook);
+      expect(res.send).toHaveBeenCalled();
     });
 
-    it('should handle errors', async () => {
-      req = { body: { title: 'New Book' } };
+    it('should handle errors and pass them to next', async () => {
+      req = { body: { name: 'New Book' } };
       const error = new Error('Database error');
       (prismaMock.book.create as jest.Mock).mockRejectedValue(error);
 

@@ -25,14 +25,45 @@ export const getUser = async (
   try {
     const user = await prisma.user.findUnique({
       where: { id: Number(req.params.id) },
-      include: { borrowedBooks: true },
+      include: {
+        borrowedBooks: {
+          include: {
+            book: true, // Include book details
+          },
+        },
+      },
     });
+
     if (!user) {
-      throw new NotFoundError('User not found'); // Throws a 404 if the user is not found
+      throw new NotFoundError('User not found');
     }
-    res.json(user);
+
+    // Transform the data to the expected response format
+    const pastBooks = user.borrowedBooks
+      .filter((borrow) => borrow.returnedAt !== null)
+      .map((borrow) => ({
+        name: borrow.book.title,
+        userScore: borrow.userScore,
+      }));
+
+    const presentBooks = user.borrowedBooks
+      .filter((borrow) => borrow.returnedAt === null)
+      .map((borrow) => ({
+        name: borrow.book.title,
+      }));
+
+    const response = {
+      id: user.id,
+      name: user.name,
+      books: {
+        past: pastBooks,
+        present: presentBooks,
+      },
+    };
+
+    res.json(response);
   } catch (error) {
-    next(error); // Passes the error to the custom middleware
+    next(error);
   }
 };
 
@@ -43,8 +74,8 @@ export const createUser = async (
 ) => {
   try {
     const { name } = req.body; // No need to check !name since validation is handled in middleware
-    const newUser = await prisma.user.create({ data: { name } });
-    res.status(201).json(newUser);
+    await prisma.user.create({ data: { name } });
+    res.status(201).send();
   } catch (error) {
     next(error); // Passes the error to the custom middleware
   }

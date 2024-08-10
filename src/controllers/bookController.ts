@@ -16,17 +16,9 @@ export const getBooks = async (
       },
     });
     const booksWithAverageScore = books.map((book) => {
-      const averageScore =
-        book.Borrow.length > 0
-          ? book.Borrow.reduce(
-              (acc, borrow) => acc + (borrow.userScore || 0),
-              0,
-            ) / book.Borrow.length
-          : null;
       return {
         id: book.id,
         title: book.title,
-        averageScore,
       };
     });
     res.json(booksWithAverageScore);
@@ -48,17 +40,19 @@ export const getBook = async (
     if (!book) {
       throw new NotFoundError('Book not found');
     }
-    const averageScore =
-      book.Borrow.length > 0
-        ? book.Borrow.reduce(
+
+    const returnedBorrows = book.Borrow.filter((borrow) => borrow.userScore);
+    const score =
+      returnedBorrows.length > 0
+        ? returnedBorrows.reduce(
             (acc, borrow) => acc + (borrow.userScore || 0),
             0,
-          ) / book.Borrow.length
-        : null;
+          ) / returnedBorrows.length
+        : -1;
     res.json({
       id: book.id,
-      title: book.title,
-      averageScore,
+      name: book.title,
+      score,
     });
   } catch (error) {
     next(error);
@@ -71,9 +65,9 @@ export const createBook = async (
   next: NextFunction,
 ) => {
   try {
-    const { title } = req.body;
-    const newBook = await prisma.book.create({ data: { title } });
-    res.status(201).json(newBook);
+    const { name } = req.body;
+    await prisma.book.create({ data: { title: name } });
+    res.status(201).send();
   } catch (error) {
     next(error);
   }
