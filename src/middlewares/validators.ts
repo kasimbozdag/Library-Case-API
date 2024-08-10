@@ -12,3 +12,14 @@ export const validateUser = [
     next();
   },
 ];
+
+export const validateBook = [
+  body('title').isString().withMessage('Title must be a string'),
+  (req: Request, res: Response, next: NextFunction) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+    next();
+  },
+];
