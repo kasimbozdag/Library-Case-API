@@ -4,8 +4,15 @@ import cors from 'cors';
 import helmet from 'helmet';
 import routes from './routes';
 import { ApiError } from './utils/ApiError';
+import swaggerUi from 'swagger-ui-express';
+import swaggerJsdoc from 'swagger-jsdoc';
+import swaggerOptions from './config/swaggerConfig';
 
 const app: Application = express();
+
+// Swagger setup
+const specs = swaggerJsdoc(swaggerOptions);
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs));
 
 // Middleware for security headers
 app.use(helmet());
