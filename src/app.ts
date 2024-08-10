@@ -1,12 +1,12 @@
-import express, { Application, Request, Response, NextFunction } from 'express';
+import express, { Application } from 'express';
 import morgan from 'morgan';
 import cors from 'cors';
 import helmet from 'helmet';
 import routes from './routes';
-import { ApiError } from './utils/ApiError';
 import swaggerUi from 'swagger-ui-express';
 import swaggerJsdoc from 'swagger-jsdoc';
 import swaggerOptions from './config/swaggerConfig';
+import { errorHandler, notFoundHandler } from './middlewares/errorHandler';
 
 const app: Application = express();
 
@@ -32,16 +32,10 @@ app.use(express.urlencoded({ extended: true }));
 // Define routes
 app.use('/api', routes);
 
-// Custom error handling middleware
-app.use(
-  (err: Error | ApiError, req: Request, res: Response, _next: NextFunction) => {
-    if (err instanceof ApiError) {
-      return res.status(err.statusCode).json({ message: err.message });
-    }
+// Handle 404 errors
+app.use(notFoundHandler);
 
-    console.error(err.stack);
-    res.status(500).json({ message: 'Internal Server Error' });
-  },
-);
+// Custom error handling middleware
+app.use(errorHandler);
 
 export default app;

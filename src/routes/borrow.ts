@@ -8,7 +8,7 @@ const router = Router();
  * @swagger
  * tags:
  *   - Borrowing
- * /users/{id}/borrow/{bookId}:
+ * /borrows/users/{id}/borrow/{bookId}:
  *   post:
  *     summary: Borrow a book for a user
  *     tags: [Borrowing]
@@ -39,7 +39,7 @@ router.post('/users/:id/borrow/:bookId', validateBorrow, borrowBook);
  * @swagger
  * tags:
  *   - Borrowing
- * /users/{id}/return/{bookId}:
+ * /borrows/users/{id}/return/{bookId}:
  *   post:
  *     summary: Return a book and provide a rating
  *     tags: [Borrowing]

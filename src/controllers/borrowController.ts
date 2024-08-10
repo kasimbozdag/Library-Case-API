@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { PrismaClient } from '@prisma/client';
-import { ApiError } from '../utils/ApiError';
+import { ApiError, NotFoundError } from '../utils/ApiError';
 
 const prisma = new PrismaClient();
 
@@ -15,12 +15,12 @@ export const borrowBook = async (
 
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) {
-      throw new ApiError('User not found', 404);
+      throw new NotFoundError('User not found');
     }
 
     const book = await prisma.book.findUnique({ where: { id: bookId } });
     if (!book) {
-      throw new ApiError('Book not found', 404);
+      throw new NotFoundError('Book not found');
     }
 
     const existingBorrow = await prisma.borrow.findFirst({

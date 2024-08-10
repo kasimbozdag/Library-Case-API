@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { PrismaClient } from '@prisma/client';
-import { ApiError } from '../utils/ApiError';
+import { NotFoundError } from '../utils/ApiError';
 
 const prisma = new PrismaClient();
 
@@ -46,7 +46,7 @@ export const getBook = async (
       include: { Borrow: true },
     });
     if (!book) {
-      throw new ApiError('Book not found', 404);
+      throw new NotFoundError('Book not found');
     }
     const averageScore =
       book.Borrow.length > 0

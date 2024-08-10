@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { PrismaClient } from '@prisma/client';
-import { ApiError } from '../utils/ApiError';
+import { NotFoundError } from '../utils/ApiError';
 
 const prisma = new PrismaClient();
 
@@ -28,7 +28,7 @@ export const getUser = async (
       include: { borrowedBooks: true },
     });
     if (!user) {
-      throw new ApiError('User not found', 404); // Throws a 404 if the user is not found
+      throw new NotFoundError('User not found'); // Throws a 404 if the user is not found
     }
     res.json(user);
   } catch (error) {
